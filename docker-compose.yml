@@ -1,0 +1,59 @@
+version: '3'
+
+services:
+  wordpress:
+    build: ./docker/wp-server
+    restart: always
+    ports:
+      - 8443:443
+      - 8080:80
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: wppass
+      WORDPRESS_DB_NAME: wordpress
+      XDEBUG_CONFIG: "remote_host=host.docker.internal" #This config works for MacOS, otherwise should be ip address of the host machine because docker container cannot find the host by localhost.
+    volumes:
+      - wp_data:/var/www/html
+      - ./docker/wp-server/keys/mycert.crt:/etc/ssl/certs/mycert.crt
+      - ./docker/wp-server/keys/mycert.key:/etc/ssl/private/mycert.key
+      - "./${PLUGIN_NAME}":"/var/www/html/wp-content/${PLUGIN_NAME}/${PLUGIN_NAME}"
+      - ./docker/wp-server/conf.d/xdebug.ini:/usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+      - ./docker/wp-server/conf.d/error_reporting.ini:/usr/local/etc/php/conf.d/error_reporting.ini
+  db:
+    image: arm64v8/mysql:oracle
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    ports:
+      - 3306:3306
+    expose:
+      - 3306
+    environment:
+      MYSQL_ROOT_PASSWORD: my-secret-pw
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wpuser
+      MYSQL_PASSWORD: wppass
+  wordpress-cli:
+    depends_on:
+      - db
+      - wordpress
+    image: wordpress:cli
+    user: "33:33"
+    command: >
+      /bin/sh -c '
+      sleep 10;
+      wp core install --path="/var/www/html" --url="https://localhost:8443" --title="${PLUGIN_NAME}.local" --admin_user=admin --admin_password=admin --admin_email=foo@bar.com;
+      wp plugin activate ${PLUGIN_WP_IDENTIFIER};
+      '
+    volumes:
+      - wp_data:/var/www/html
+      - "./${PLUGIN_NAME}":""/var/www/html/wp-content/plugins/${PLUGIN_NAME}"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wpuser
+      WORDPRESS_DB_PASSWORD: wppass
+      WORDPRESS_DB_NAME: wordpress
+volumes:
+  wp_data:
+  db:
+
